@@ -1,0 +1,162 @@
+export default class Game extends Phaser.Scene {
+  constructor() {
+    super("game");
+  }
+
+  init() {
+    this.score = 0;
+    this.collectedTargets = 0;
+  }
+
+  preload() {
+    this.load.tilemapTiledJSON("map", "public/assets/tilemap/big_map.json");
+    this.load.image("tileset2", "public/assets/C_OutSide_Nature.png");
+    this.load.image("star", "public/assets/star.png");
+    this.load.spritesheet("dude", "./public/assets/dude.png", {
+      frameWidth: 32,
+      frameHeight: 48,
+    });
+  }
+
+  create() {
+    const map = this.make.tilemap({ key: "map" });
+    const tileset = map.addTilesetImage("Platform", "tileset2");
+    const platformLayer = map.createLayer("Plataformas", tileset, 0, 0);
+    const objectsLayer = map.getObjectLayer("Objetos");
+
+    const spawnPoint = map.findObject("Objetos", (obj) => obj.name === "player");
+
+    this.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, "dude");
+    this.player.body.setCollideWorldBounds(false);
+
+    this.createAnimations();
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+
+    platformLayer.setCollisionByProperty({ esColisionable: true });
+    this.physics.add.collider(this.player, platformLayer);
+
+    this.stars = this.physics.add.group();
+    this.targets = this.physics.add.group();
+
+    objectsLayer.objects.forEach(({ x = 0, y = 0, type, name }) => {
+      if (name === "target") {
+        const target = this.targets.create(x, y, "star");
+        target.setTint(0xff0000);
+      }
+      if (type === "star") {
+        this.stars.create(x, y, "star");
+      }
+    });
+
+    this.physics.add.collider(this.stars, platformLayer);
+    this.physics.add.collider(this.targets, platformLayer);
+
+    this.physics.add.overlap(this.player, this.targets, this.collectTarget, null, this);
+    this.physics.add.overlap(this.player, this.stars, this.checkLevelComplete, null, this);
+
+    this.scoreText = this.add.text(16, 16, `Score: ${this.score}`, {
+      fontSize: "28px",
+      fill: "#000",
+    });
+
+    this.targetsText = this.add.text(16, 50, `Targets: 0 / 5`, {
+      fontSize: "24px",
+      fill: "#000",
+    });
+
+    this.messageText = this.add.text(400, 300, "", {
+      fontSize: "32px",
+      fill: "#ff0000",
+      backgroundColor: "#fff",
+      padding: { x: 10, y: 5 },
+    }).setOrigin(0.5).setVisible(false);
+
+    this.cameras.main.startFollow(this.player);
+    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+  }
+
+  createAnimations() {
+    this.anims.create({
+      key: "left",
+      frames: this.anims.generateFrameNumbers("dude", { start: 0, end: 3 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+
+    this.anims.create({
+      key: "turn",
+      frames: [{ key: "dude", frame: 4 }],
+      frameRate: 20,
+    });
+
+    this.anims.create({
+      key: "right",
+      frames: this.anims.generateFrameNumbers("dude", { start: 5, end: 8 }),
+      frameRate: 10,
+      repeat: -1,
+    });
+  }
+
+  update() {
+    const { left, right, up, down } = this.cursors;
+
+    this.player.setVelocityX(left.isDown ? -160 : right.isDown ? 160 : 0);
+    this.player.setVelocityY(up.isDown ? -160 : down.isDown ? 160 : 0);
+
+    if (left.isDown) this.player.anims.play("left", true);
+    else if (right.isDown) this.player.anims.play("right", true);
+    else if (this.player.body.velocity.x === 0 && this.player.body.velocity.y === 0) {
+      this.player.anims.play("turn");
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyR)) {
+      this.scene.restart();
+    }
+
+    const cam = this.cameras.main;
+    this.scoreText.setPosition(cam.worldView.x + 16, cam.worldView.y + 16);
+    this.targetsText.setPosition(cam.worldView.x + 16, cam.worldView.y + 50);
+    this.messageText.setPosition(cam.worldView.centerX, cam.worldView.centerY);
+  }
+
+  collectTarget(_, target) {
+    target.disableBody(true, true);
+    this.collectedTargets++;
+    this.score += 25;
+    this.scoreText.setText(`Score: ${this.score}`);
+    this.targetsText.setText(`Targets: ${this.collectedTargets} / 5`);
+  }
+
+  checkLevelComplete() {
+    if (this.collectedTargets >= 5) {
+      this.add.text(
+        this.cameras.main.worldView.centerX,
+        this.cameras.main.worldView.centerY,
+        "¡Nivel Completado!",
+        {
+          fontSize: "48px",
+          fill: "#0f0",
+        }
+      ).setOrigin(0.5);
+
+      this.player.setTint(0x00ff00);
+      this.physics.pause();
+
+      this.time.delayedCall(3000, () => {
+        this.scene.start("nextLevel", { score: this.score });
+      });
+    } else {
+      this.showTemporaryMessage("¡Recolectá los 5 targets primero!");
+    }
+  }
+
+  showTemporaryMessage(message) {
+    this.messageText.setText(message).setVisible(true);
+    this.time.delayedCall(3000, () => {
+      this.messageText.setVisible(false);
+    });
+  }
+}
+
